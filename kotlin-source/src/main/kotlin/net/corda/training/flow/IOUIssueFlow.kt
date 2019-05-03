@@ -2,16 +2,11 @@ package net.corda.training.flow
 
 import co.paralleluniverse.fibers.Suspendable
 import net.corda.core.contracts.requireThat
-import net.corda.core.flows.CollectSignaturesFlow
-import net.corda.core.flows.FinalityFlow
-import net.corda.core.flows.FlowLogic
-import net.corda.core.flows.FlowSession
-import net.corda.core.flows.InitiatedBy
-import net.corda.core.flows.InitiatingFlow
-import net.corda.core.flows.SignTransactionFlow
-import net.corda.core.flows.StartableByRPC
+import net.corda.core.flows.*
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
+import net.corda.training.contract.IOUContract
+import net.corda.training.contract.IOUContract.Companion.IOU_CONTRACT_ID
 import net.corda.training.state.IOUState
 
 /**
@@ -23,13 +18,21 @@ import net.corda.training.state.IOUState
 @InitiatingFlow
 @StartableByRPC
 class IOUIssueFlow(val state: IOUState) : FlowLogic<SignedTransaction>() {
+
     @Suspendable
     override fun call(): SignedTransaction {
-        // Placeholder code to avoid type error when running the tests. Remove before starting the flow task!
-        return serviceHub.signInitialTransaction(
-                TransactionBuilder(notary = null)
-        )
+        val notary = serviceHub.networkMapCache.notaryIdentities.first()
+        val txBuilder = TransactionBuilder(notary)
+        txBuilder.addOutputState(state, IOU_CONTRACT_ID)
+        txBuilder.addCommand(IOUContract.Commands.Issue(), state.participants.map { it.owningKey })
+        txBuilder.verify(serviceHub)
+
+        val selfSignedTx = serviceHub.signInitialTransaction(txBuilder)
+        val sessions = state.participants.filter { it != ourIdentity }.map { initiateFlow(it) }
+        val fullySignedTx = subFlow(CollectSignaturesFlow(selfSignedTx, sessions))
+        return subFlow(FinalityFlow(fullySignedTx, sessions))
     }
+
 }
 
 /**
@@ -37,7 +40,8 @@ class IOUIssueFlow(val state: IOUState) : FlowLogic<SignedTransaction>() {
  * The signing is handled by the [SignTransactionFlow].
  */
 @InitiatedBy(IOUIssueFlow::class)
-class IOUIssueFlowResponder(val flowSession: FlowSession): FlowLogic<Unit>() {
+class IOUIssueFlowResponder(val flowSession: FlowSession) : FlowLogic<Unit>() {
+
     @Suspendable
     override fun call() {
         val signedTransactionFlow = object : SignTransactionFlow(flowSession) {
@@ -47,5 +51,7 @@ class IOUIssueFlowResponder(val flowSession: FlowSession): FlowLogic<Unit>() {
             }
         }
         subFlow(signedTransactionFlow)
+        subFlow(ReceiveFinalityFlow(flowSession))
     }
+
 }
