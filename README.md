@@ -144,3 +144,23 @@ When running the flow tests, if you get a Quasar instrumention error then add:
 to the VM args property in the default run configuration for JUnit in IntelliJ.
 
 Solutions are available [here](https://github.com/corda/corda-training-solutions).
+
+
+## Notes
+
+Deploy
+```
+./gradlew deployNodes
+```
+
+Run
+```aidl
+kotlin-source/build/nodes/runnodes
+```
+
+Issue
+```aidl
+http://localhost:10009/api/iou/issue-iou?amount=10&currency=USD&party=O=ParticipantB,L=New York,C=US
+```
+
+
